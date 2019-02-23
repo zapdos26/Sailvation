@@ -24,8 +24,11 @@ class Rcon:
                             database = self.db['database'],
                         )
             self.mycursor = self.db.cursor()
+            sql = 'CREATE TABLE IF NOT EXISTS `sailvation` (`id` int(11) NOT NULL AUTO_INCREMENT,`discord_id` varchar(18) DEFAULT NULL,`steam64_id` varchar(17) DEFAULT NULL, `timestamp` int(11) DEFAULT NULL,PRIMARY KEY (`id`))'
+            self.mycursor.execute(sql)
+            self.db.commit()
         except Error as e :
-            print ("Error while connecting to MySQL", e)  
+            print ("Error while connecting to MySQL", e)
 
     @commands.command(pass_context=True,description="This command whitelists the specified Steam64 Id to the server.")
     @commands.cooldown(1, 60, commands.BucketType.user)
