@@ -20,7 +20,7 @@ class Rcon:
             self.db = mysql.connector.connect(
                             host = self.db['host'],
                             user = self.db['username'],
-                            passwd = self.db.host['password'],
+                            passwd = self.db['password'],
                             database = self.db['database'],
                         )
             self.mycursor = self.db.cursor()
@@ -31,52 +31,48 @@ class Rcon:
     @commands.cooldown(1, 60, commands.BucketType.user)
     async def whitelist(self,ctx,steam64):
         if len(steam64) != 17 or steam64.isdigit() == False:
-            await ctx.send("<@{}> This is not a valid Steam64 Id.".format(ctx.author.id))
+            await ctx.send(f"<@{ctx.author.id}> This is not a valid Steam64 Id.")
             return
-        await ctx.send("<@{}> Please verify that the following Steam account is yours: http://steamcommunity.com/profiles/{}\n**If it is, do `!confirm` within a minute.**".format(ctx.author.id,steam64))
+        await ctx.send(f"<@{ctx.author.id}> Please verify that the following Steam account is yours: http://steamcommunity.com/profiles/{steam64}\n**If it is, do `!confirm` within a minute.**")
         def check(m):
             return m.content.lower() == "!confirm" and m.author.id == ctx.author.id and m.channel == ctx.message.channel
         answer1 = await self.bot.wait_for('message',check = check, timeout=60)
         if answer1 == None:
-            await ctx.send("<@{}> You did not do !confirm within a minute. Please start over again.".format(ctx.author.id))
+            await ctx.send(f"<@{ctx.author.id}> You did not do !confirm within a minute. Please start over again.")
         existence = await self.check_existence(ctx.author.id, steam64)
         if existence != None:
-            await ctx.send("<@{}> Your {} is already in the system. Please contact an admin if you believe this is incorrect.".format(ctx.author.id,existence))
-            return		
-        if await self._whitelist(steam64) == False:
-            await ctx.send("<@{}> Something went wrong in the whitelisting process. Please contact an admin to fix it.".format(ctx.author.id))
+            await ctx.send(f"<@{ctx.author.id}> Your {existence} is already in the system. Please contact an admin if you believe this is incorrect.")
+            return    
+        if not (await self.rcon_command(f"AllowPlayerToJoinNoCheck {steam64}")):
+            await ctx.send(f"<@{ctx.author.id}> Something went wrong in the whitelisting process. Please contact an admin to fix it.")
             return	
         sql = "INSERT INTO sailvation (discord_id,steam64_id,timestamp) VALUES (%s,%s,%s)"
         value = (ctx.author.id,steam64,time.time()+2592000.0)
         self.mycursor.execute(sql, value)
         self.db.commit()
-        await ctx.send("<@{}> You have successfully been whitelisted onto Sailvation.".format(ctx.author.id))
+        await ctx.send(f"<@{ctx.author.id}> You have successfully been whitelisted onto Sailvation.")
 
-    async def _whitelist(self, steam64):
-        try:
-            for x in range(len(self.config)):
-                server_address = (self.config[x]['server_address'],int(self.config[x]['server_port']))
-                password = self.config[x]['password']			
-                with valve.rcon.RCON(server_address, password, timeout=10,multi_part=False) as rcon:
-                    print(rcon.execute("AllowPlayerToJoinNoCheck {}".format(steam64)).text)
-                    rcon.close()
-            return True
 
-        except:
+    
+    async def rcon_command(self,command):
+        tasks = []
+        for server in self.config:
+            tasks.append(self._rcon_command(server,command))
+        good = await asyncio.gather(*tasks,return_exceptions=True)
+        if any(good) == False:
             return False
-
-    async def _unwhitelist(self, steam64):
+        return True
+    
+    async def _rcon_command(self,server,command):
         try:
-            for x in range(len(self.config)):
-                server_address = (self.config[x]['server_address'],int(self.config[x]['server_port']))
-                password = self.config[x]['password']			
-                with valve.rcon.RCON(server_address, password, timeout=10,multi_part=False) as rcon:
-                    print(rcon.execute("DisallowPlayerToJoinNoCheck {}".format(steam64)).text)
-                    rcon.close()
+            server_address = (server['server_address'],int(server['server_port']))
+            password = server['password']	
+            with valve.rcon.RCON(server_address, password, timeout=10,multi_part=False) as rcon:
+                print(rcon.execute(command).text)
+                rcon.close()
             return True
-
         except:
-            return False
+            False
 
     async def get_steam64(self,discord_id):
         sql = "SELECT * FROM sailvation WHERE discord_id = %s"
@@ -106,52 +102,53 @@ class Rcon:
     async def active(self,ctx):
         steam64 = await self.get_steam64(ctx.author.id)
         if await self.check_existence(ctx.author.id, steam64) == None:
-            await ctx.send("<@{}> You aren't in the system. Please whitelist yourself with `!whitelist`".format(ctx.author.id))
+            await ctx.send(f"<@{ctx.author.id}> You aren't in the system. Please whitelist yourself with `!whitelist`")
             return
-        await self._whitelist(steam64)
-        sql = "UPDATE sailvation SET timestamp = {} WHERE discord_id = {}".format(time.time()+2592000.0,ctx.author.id)
+        good = await self.rcon_command(f"AllowPlayerToJoinNoCheck {steam64}") 
+        sql = f"UPDATE sailvation SET timestamp = {time.time()+2592000.0} WHERE discord_id = {ctx.author.id}"
         self.mycursor.execute(sql)
         self.db.commit()
-        await ctx.send("<@{}> Thanks! Remember do this approximately every 30 days to let us know you are active".format(ctx.author.id))
+        await ctx.send("<@{ctx.author.id}> Thanks! Remember do this approximately every 30 days to let us know you are active")
 
     @commands.command(pass_context=True,description="Purge old members")
     @commands.has_permissions(administrator=True)
     async def purge(self,ctx):
-        sql = "SELECT * FROM sailvation WHERE  timestamp < {}".format(time.time())
+        sql = f"SELECT * FROM sailvation WHERE  timestamp < {time.time()}"
         self.mycursor.execute(sql)
         myresult = self.mycursor.fetchall()
         amount = len(myresult)
         for result in myresult:
-            await self._unwhitelist(result[2])
+            await self.rcon_command(f"DisallowPlayerToJoinNoCheck {result[2]}")
             await asyncio.sleep(1)
-        sql = "DELETE FROM sailvation WHERE timestamp < {}".format(time.time())
+        sql = f"DELETE FROM sailvation WHERE timestamp < {time.time()}"
         self.mycursor.execute(sql)
         self.db.commit()
-        await ctx.send("<@{}> You have successfully purged {} people.".format(ctx.author.id,amount))
+        await ctx.send(f"<@{ctx.author.id}> You have successfully purged {amount} people.")
 
     @commands.command(pass_context=True,description = "Purge old members")
     @commands.has_permissions(ban_members = True)
     async def unwhitelist(self,ctx,discord_id):
         if len(discord_id) != 18:
-            await ctx.send("<@{}> This is not a valid Discord id.".format(ctx.author.id))
+            await ctx.send(f"<@{ctx.author.id}> This is not a valid Discord id.")
             return
         member = ctx.guild.get_member(int(discord_id))
         if member == None:
-            await ctx.send("<@{}> This member is not in the Discord.".format(ctx.author.id))
+            await ctx.send(f"<@{ctx.author.id}> This member is not in the Discord.")
             return
         if await self.check_existence(member.id) == None:
-            await ctx.send("<@{}> {} is not whitelisted.".format(ctx.author.id,member.display_name))
+            await ctx.send(f"<@{ctx.author.id}> {member.display_name} is not whitelisted.")
             return
         steam64 = await self.get_steam64(member.id)
         if steam64 == None:
-            await ctx.send("<@{}> {} is not whitelisted.".format(ctx.author.id,member.display_name))
+            await ctx.send(f"<@{ctx.author.id}> {member.display_name} is not whitelisted.")
             return
         else:
-            await self._unwhitelist(steam64)
-            sql = "DELETE FROM sailvation WHERE discord_id = {}".format(member.id)
+            if not await self.rcon_command(f"DisallowPlayerToJoinNoCheck {steam64}"):
+                ctx.send(f"<@{ctx.author.id}> Something has failed. {member.display_name} has not been unwhitelisted.")
+            sql = f"DELETE FROM sailvation WHERE discord_id = {member.id}"
             self.mycursor.execute(sql)
             self.db.commit()			
-            await ctx.send('<@{}> You have successfully unwhitelisted <@{}>'.format(ctx.author.id,member.id))
+            await ctx.send(f'<@{ctx.author.id}> You have successfully unwhitelisted <@{member.id}>')
 
     async def memberleave(self,member):
         if await self.check_existence(member.id) == None:
@@ -160,8 +157,8 @@ class Rcon:
         if steam64 == None:
             return
         else:
-            await self._unwhitelist(steam64)
-            sql = "DELETE FROM sailvation WHERE discord_id = {}".format(member.id)
+            await self.rcon_command(f"DisallowPlayerToJoinNoCheck {steam64}")
+            sql = f"DELETE FROM sailvation WHERE discord_id = {member.id}"
             self.mycursor.execute(sql)
             self.db.commit()
 
@@ -172,23 +169,12 @@ class Rcon:
         if steam64 == None:
             return
         else:
-            await self._ban(steam64)
-            await self._unwhitelist(steam64)
+            await self.rcon_command(f"banplayer {steam64}")
+            await self.rcon_command(f"DisallowPlayerToJoinNoCheck {steam64}")
             sql = "DELETE FROM sailvation WHERE discord_id = {}".format(member.id)
             self.mycursor.execute(sql)
             self.db.commit()
 
-
-    async def _ban(self, steam64):
-        for x in range(len(self.config)):
-            try:
-                server_address = (self.config[x]['server_address'],int(self.config[x]['server_port']))
-                password = self.config[x]['password']			
-                with valve.rcon.RCON(server_address, password, timeout=10,multi_part=False) as rcon:
-                    print(rcon.execute("banplayer {}".format(steam64)))
-            except:
-                return False 
-        return True
 
     async def _lookup(self,_id,_type):
         sql = "SELECT * FROM sailvation WHERE {} = %s".format(_type)
@@ -218,19 +204,13 @@ class Rcon:
     @commands.command(pass_context=True,description="Broadcast to all aservers")
     @commands.has_permissions(administrator=True)
     async def broadcast(self,ctx,*,message):
-        print(message)
-        try:
-            for x in range(len(self.config)):
-                server_address = (self.config[x]['server_address'],int(self.config[x]['server_port']))
-                password = self.config[x]['password']				
-                with valve.rcon.RCON(server_address, password, timeout=10,multi_part=False) as rcon:
-                    print(rcon.execute("broadcast {}".format(message)).text)
-                    rcon.close()
-            await ctx.send(f"<@{ctx.author.id}>  You have successfully broadcasted a message.")
-
-        except:
-            return False
-
+        good = await self.rcon_command(f"broadcast {message}")
+        if not any(good):
+            ctx.send(f"<@{ctx.author.id}> Broadcast has failed on one or more servers.")
+            return
+        ctx.send(f"<@{ctx.author.id}> The follow message has successfully broadcasted on all servers: '{message}'")
+            
+        
     @commands.command(pass_context=True,description="Verify your Steam64 account is connected")
     async def connected(self,ctx):
         sql = "SELECT * FROM sailvation WHERE discord_id = %s"
@@ -241,6 +221,15 @@ class Rcon:
             await ctx.send(f"<@{ctx.author.id}>  You haven't whitelisted yourself yet.")
             return
         await ctx.send(f"<@{ctx.author.id}>  You have successfully whitelisted with the following id: {myresult[0][2]} Verify that is the correct Steam64 Id. ")
+        
+    @commands.command(pass_context=True,description="Broadcast to all aservers")
+    @commands.has_permissions(administrator=True)
+    async def destroywilddinos(self,ctx):
+        good = await self.rcon_command("DestroyWildDinos")
+        if not any(good):
+            ctx.send(f"<@{ctx.author.id}> DestroyWildDinos has failed on one or more servers.")
+            return
+        ctx.send(f"<@{ctx.author.id}> DestroyWildDinos has successfully ran on all servers")
 
 
 def setup(bot):
