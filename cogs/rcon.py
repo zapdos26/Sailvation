@@ -209,9 +209,9 @@ class Rcon:
     async def broadcast(self,ctx,*,message):
         good = await self.rcon_command(f"broadcast {message}")
         if not any(good):
-            ctx.send(f"<@{ctx.author.id}> Broadcast has failed on one or more servers.")
+            await ctx.send(f"<@{ctx.author.id}> Broadcast has failed on one or more servers.")
             return
-        ctx.send(f"<@{ctx.author.id}> The follow message has successfully broadcasted on all servers: '{message}'")
+        await ctx.send(f"<@{ctx.author.id}> The follow message has successfully broadcasted on all servers: '{message}'")
             
         
     @commands.command(pass_context=True,description="Verify your Steam64 account is connected")
@@ -225,14 +225,14 @@ class Rcon:
             return
         await ctx.send(f"<@{ctx.author.id}>  You have successfully whitelisted with the following id: {myresult[0][2]} Verify that is the correct Steam64 Id. ")
         
-    @commands.command(pass_context=True,description="Broadcast to all aservers")
+    @commands.command(pass_context=True,description="Destroy Wild Dinos")
     @commands.has_permissions(administrator=True)
     async def destroywilddinos(self,ctx):
         good = await self.rcon_command("DestroyWildDinos")
         if not any(good):
-            ctx.send(f"<@{ctx.author.id}> DestroyWildDinos has failed on one or more servers.")
+            await ctx.send(f"<@{ctx.author.id}> DestroyWildDinos has failed on one or more servers.")
             return
-        ctx.send(f"<@{ctx.author.id}> DestroyWildDinos has successfully ran on all servers")
+        await ctx.send(f"<@{ctx.author.id}> DestroyWildDinos has successfully ran on all servers")
 
 
 def setup(bot):
