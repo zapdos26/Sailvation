@@ -111,7 +111,7 @@ class Rcon:
         sql = f"UPDATE sailvation SET timestamp = {time.time()+2592000.0} WHERE discord_id = {ctx.author.id}"
         self.mycursor.execute(sql)
         self.db.commit()
-        await ctx.send("<@{ctx.author.id}> Thanks! Remember do this approximately every 30 days to let us know you are active")
+        await ctx.send(f"<@{ctx.author.id}> Thanks! Remember do this approximately every 30 days to let us know you are active")
 
     @commands.command(pass_context=True,description="Purge old members")
     @commands.has_permissions(administrator=True)
