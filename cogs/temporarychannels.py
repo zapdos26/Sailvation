@@ -1,20 +1,15 @@
-import discord
 from discord.ext import commands
-import traceback
-import asyncio
-import json
 from utils import settings
 
 
-class TemporaryChannels:
+class TemporaryChannels(commands.Cog, name = "Temporary Channels"):
 	def __init__(self,bot):
 		self.bot = bot
 		self.config = settings.get('temporarychannels.json')
-		self.bot.add_listener(self.voiceupdate,"on_voice_state_update")
-		self.bot.add_listener(self.guildjoin,"on_guild_join")
 		self.temporary_channels = set()
-	
-	async def voiceupdate(self,member, before, after):
+
+	@commands.Cog.listener()
+	async def on_voice_state_update(self,member, before, after):
 		if after.channel == before.channel: return 
 		await self.check_channel(before.channel)
 		if after.channel == None:
@@ -25,8 +20,9 @@ class TemporaryChannels:
 			voice_channel = await guild.create_voice_channel(name=name,overwrites=None,category=after.channel.category,reason="New Temp Voice Channel Created!")
 			self.temporary_channels.add(voice_channel)
 			await member.move_to(voice_channel)  
-		
-	async def guildjoin(self,guild):
+
+	@commands.Cog.listener()
+	async def on_guild_join(self,guild):
 		if guild.id not in self.config:
 			self.config[guild.id] = dict()
 			self.config[guild.id]['connect'] = None
